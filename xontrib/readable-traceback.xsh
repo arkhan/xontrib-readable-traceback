@@ -3,7 +3,7 @@ import xonsh.tools
 from xonsh.platform import os_environ
 from xonsh.tools import to_logfile_opt, display_error_message
 import traceback
-import backtrace
+import pretty_traceback
 import sys
 import os
 from colorama import init, Fore, Style
@@ -15,14 +15,14 @@ $XONSH_SHOW_TRACEBACK=True
 $XONSH_TRACEBACK_LOGFILE=None
 $XONSH_READABLE_TRACEBACK=True
 
-# backtrace usage : https://github.com/nir0s/backtrace#usage
+# pretty-traceback configuration
 $READABLE_TRACE_STYLES={
-        'backtrace': Fore.YELLOW + '{0}',
-        'error': Fore.RED + Style.BRIGHT + '{0}',
+        'filename': Fore.YELLOW + '{0}',
         'line': Fore.RED + Style.BRIGHT + '{0}',
-        'module': '{0}',
-        'context': Style.BRIGHT + Fore.GREEN + '{0}',
-        'call': Fore.RED + '--> ' + Fore.YELLOW + Style.BRIGHT + '{0}'}
+        'name': '{0}',
+        'source': Style.BRIGHT + Fore.GREEN + '{0}',
+        'exception': Fore.RED + Style.BRIGHT + '{0}',
+        'exception_name': Fore.RED + '--> ' + Fore.YELLOW + Style.BRIGHT + '{0}'}
 $READABLE_TRACE_REVERSE=False
 $READABLE_TRACE_ALIGN=False
 $READABLE_TRACE_STRIP_PATH_ENV=False
@@ -41,7 +41,6 @@ def __flush(message):
         st = ''.join([rep(s) for s in message.split('\n')])
     sys.stderr.buffer.write(st.encode(encoding="utf-8"))
     sys.stderr.flush()
-backtrace._flush=__flush
 
 
 def _print_exception(msg=None, exc_info=None):
@@ -63,28 +62,26 @@ def _print_exception(msg=None, exc_info=None):
         with open(log_file, 'a') as f:
             traceback.print_exc(file=f)
 
-    #backtrace_hock
+    # pretty-traceback hook
     tpe, v, tb = sys.exc_info() if exc_info is None else exc_info
     if $XONSH_READABLE_TRACEBACK:
-        backtrace.hook(
-            tb=tb,
-            tpe=tpe,
-            value=v,
+        pretty_traceback.configure(
+            display_link=True,
+            style=$READABLE_TRACE_STYLES,
             reverse=$READABLE_TRACE_REVERSE,
-            align=$READABLE_TRACE_ALIGN,
             strip_path=$READABLE_TRACE_STRIP_PATH_ENV,
-            enable_on_envvar_only=$READABLE_TRACE_ENVVAR_ONLY,
-            on_tty=$READABLE_TRACE_ON_TTY,
-            conservative=$READABLE_TRACE_CONSERVATIVE,
-            styles=$READABLE_TRACE_STYLES)
+            suppress=[__file__]
+        )
+        pretty_traceback.hook()
+        traceback.print_exception(tpe, v, tb)
     elif not $XONSH_SHOW_TRACEBACK:
-        backtrace.unhook()
+        pretty_traceback.unhook()
         display_error_message()
     else:
-        backtrace.unhook()
+        pretty_traceback.unhook()
         traceback.print_exc()
     if msg:
         msg = msg if msg.endswith('\n') else msg + '\n'
         sys.stderr.write(msg)
-xonsh.tools.print_exception = _print_exception
 
+xonsh.tools.print_exception = _print_exception
