@@ -3,7 +3,6 @@ import os
 import sys
 import traceback
 
-import pretty_traceback
 import xonsh.tools
 from xonsh.platform import os_environ
 from xonsh.tools import display_error_message, to_logfile_opt
@@ -16,31 +15,33 @@ $XONSH_SHOW_TRACEBACK = True
 $XONSH_TRACEBACK_LOGFILE = None
 $XONSH_READABLE_TRACEBACK = True
 
-# Configuración de pretty-traceback
-$PRETTY_TRACE_CONFIG = {
-    'show_locals': True,      # Muestra variables locales en cada frame
-    'truncate_locals': 100,   # Trunca valores locales a 100 caracteres
-    'theme': 'monokai'        # Tema de colores (otros: 'default', 'colorful', etc.)
-}
+# Importamos el módulo pero no llamamos a sus funciones directamente
+try:
+    import pretty_traceback
+    PRETTY_TRACEBACK_AVAILABLE = True
+except ImportError:
+    PRETTY_TRACEBACK_AVAILABLE = False
 
-# Configurar pretty_traceback
-def configure_pretty_traceback():
-    if $XONSH_READABLE_TRACEBACK:
-        config = $PRETTY_TRACE_CONFIG
-        # Instalamos pretty_traceback con las opciones disponibles
-        pretty_traceback.install(
-            show_locals=config.get('show_locals', True),
-            theme=config.get('theme', 'monokai'),
-            truncate_locals=config.get('truncate_locals', 100)
-        )
-    else:
-        # Desactivar pretty-traceback
+# Guardamos el excepthook original al inicio
+ORIGINAL_EXCEPTHOOK = sys.excepthook
+
+def enable_pretty_traceback():
+    """Activa pretty_traceback si está disponible"""
+    if PRETTY_TRACEBACK_AVAILABLE and $XONSH_READABLE_TRACEBACK:
+        # Simplemente importar pretty_traceback ya lo activa en algunas versiones
+        # Si no, podemos intentar activarlo explícitamente
         try:
-            pretty_traceback.uninstall()
-        except AttributeError:
-            # En algunas versiones no existe uninstall, así que restauramos el excepthook original
-            if hasattr(sys, '_original_excepthook'):
-                sys.excepthook = sys._original_excepthook
+            pretty_traceback.install()
+        except Exception:
+            # Si falla, no hacemos nada (el módulo probablemente ya se activó al importarlo)
+            pass
+        return True
+    return False
+
+def disable_pretty_traceback():
+    """Desactiva pretty_traceback y restaura el excepthook original"""
+    if PRETTY_TRACEBACK_AVAILABLE:
+        sys.excepthook = ORIGINAL_EXCEPTHOOK
 
 def print_exception(msg=None, exc_info=None):
     """
@@ -66,25 +67,18 @@ def print_exception(msg=None, exc_info=None):
     # Gestionar el traceback
     tpe, v, tb = sys.exc_info() if exc_info is None else exc_info
 
-    if $XONSH_READABLE_TRACEBACK:
-        # Reconfigura pretty-traceback con la configuración actual
-        configure_pretty_traceback()
-
-        # Mostrar la excepción con pretty_traceback
-        # (pretty_traceback ya interceptará las excepciones no capturadas a través de sys.excepthook,
-        # pero aquí lo llamamos explícitamente para la excepción actual)
+    if $XONSH_READABLE_TRACEBACK and PRETTY_TRACEBACK_AVAILABLE:
+        # Activar pretty_traceback
+        enable_pretty_traceback()
+        # Llamar al handler actual de excepciones
         sys.excepthook(tpe, v, tb)
     elif not $XONSH_SHOW_TRACEBACK:
-        try:
-            pretty_traceback.uninstall()
-        except AttributeError:
-            pass
+        # Desactivar pretty_traceback y mostrar mensaje simple
+        disable_pretty_traceback()
         display_error_message()
     else:
-        try:
-            pretty_traceback.uninstall()
-        except AttributeError:
-            pass
+        # Desactivar pretty_traceback y mostrar traceback normal
+        disable_pretty_traceback()
         traceback.print_exc()
 
     if msg:
@@ -95,4 +89,5 @@ def print_exception(msg=None, exc_info=None):
 xonsh.tools.print_exception = print_exception
 
 # Configurar pretty-traceback al cargar el xontrib
-configure_pretty_traceback()
+if $XONSH_READABLE_TRACEBACK:
+    enable_pretty_traceback()
