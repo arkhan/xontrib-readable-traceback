@@ -18,33 +18,29 @@ $XONSH_READABLE_TRACEBACK = True
 
 # Configuración de pretty-traceback
 $PRETTY_TRACE_CONFIG = {
-    'display_locals': True,      # Muestra variables locales en cada frame
-    'display_trace': True,       # Muestra la ruta completa de la traza
-    'display_timestamp': False,  # No mostrar timestamp en cada línea
-    'display_scope': True,       # Muestra el ámbito de la excepción
-    'truncate_locals': 100,      # Trunca valores locales a 100 caracteres
-    'timeline': True,            # Muestra la línea de tiempo de la traza
-    'theme': 'monokai'           # Tema de colores (otros: 'default', 'colorful', etc.)
+    'show_locals': True,      # Muestra variables locales en cada frame
+    'truncate_locals': 100,   # Trunca valores locales a 100 caracteres
+    'theme': 'monokai'        # Tema de colores (otros: 'default', 'colorful', etc.)
 }
 
 # Configurar pretty_traceback
 def configure_pretty_traceback():
     if $XONSH_READABLE_TRACEBACK:
         config = $PRETTY_TRACE_CONFIG
-        pretty_traceback.configure(
-            display_locals=config.get('display_locals', True),
-            display_trace=config.get('display_trace', True),
-            display_timestamp=config.get('display_timestamp', False),
-            display_scope=config.get('display_scope', True),
-            truncate_locals=config.get('truncate_locals', 100),
-            timeline=config.get('timeline', True),
+        # Instalamos pretty_traceback con las opciones disponibles
+        pretty_traceback.install(
+            show_locals=config.get('show_locals', True),
             theme=config.get('theme', 'monokai'),
+            truncate_locals=config.get('truncate_locals', 100)
         )
-        # Activar pretty-traceback
-        pretty_traceback.install()
     else:
         # Desactivar pretty-traceback
-        pretty_traceback.uninstall()
+        try:
+            pretty_traceback.uninstall()
+        except AttributeError:
+            # En algunas versiones no existe uninstall, así que restauramos el excepthook original
+            if hasattr(sys, '_original_excepthook'):
+                sys.excepthook = sys._original_excepthook
 
 def print_exception(msg=None, exc_info=None):
     """
@@ -69,16 +65,26 @@ def print_exception(msg=None, exc_info=None):
 
     # Gestionar el traceback
     tpe, v, tb = sys.exc_info() if exc_info is None else exc_info
+
     if $XONSH_READABLE_TRACEBACK:
         # Reconfigura pretty-traceback con la configuración actual
         configure_pretty_traceback()
-        # pretty-traceback ya mostrará automáticamente la excepción
-        # ya que está instalado como hook de sys.excepthook
+
+        # Mostrar la excepción con pretty_traceback
+        # (pretty_traceback ya interceptará las excepciones no capturadas a través de sys.excepthook,
+        # pero aquí lo llamamos explícitamente para la excepción actual)
+        sys.excepthook(tpe, v, tb)
     elif not $XONSH_SHOW_TRACEBACK:
-        pretty_traceback.uninstall()
+        try:
+            pretty_traceback.uninstall()
+        except AttributeError:
+            pass
         display_error_message()
     else:
-        pretty_traceback.uninstall()
+        try:
+            pretty_traceback.uninstall()
+        except AttributeError:
+            pass
         traceback.print_exc()
 
     if msg:
