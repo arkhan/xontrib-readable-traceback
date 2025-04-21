@@ -5,102 +5,88 @@ import traceback
 
 import pretty_traceback
 import xonsh.tools
-from colorama import Fore, Style, init
 from xonsh.platform import os_environ
 from xonsh.tools import display_error_message, to_logfile_opt
 
 
 __all__ = ()
-__version__ = '0.3.1'
+__version__ = '0.4.0'
 
 $XONSH_SHOW_TRACEBACK = True
 $XONSH_TRACEBACK_LOGFILE = None
 $XONSH_READABLE_TRACEBACK = True
 
-# pretty-traceback configuration
-$READABLE_TRACE_STYLES = {
-    'filename': Fore.YELLOW + '{0}',
-    'line': Fore.RED + Style.BRIGHT + '{0}',
-    'name': '{0}',
-    'source': Style.BRIGHT + Fore.GREEN + '{0}',
-    'exception': Fore.RED + Style.BRIGHT + '{0}',
-    'exception_name': Fore.RED + '--> ' + Fore.YELLOW + Style.BRIGHT + '{0}'
+# Configuración de pretty-traceback
+$PRETTY_TRACE_CONFIG = {
+    'display_locals': True,      # Muestra variables locales en cada frame
+    'display_trace': True,       # Muestra la ruta completa de la traza
+    'display_timestamp': False,  # No mostrar timestamp en cada línea
+    'display_scope': True,       # Muestra el ámbito de la excepción
+    'truncate_locals': 100,      # Trunca valores locales a 100 caracteres
+    'timeline': True,            # Muestra la línea de tiempo de la traza
+    'theme': 'monokai'           # Tema de colores (otros: 'default', 'colorful', etc.)
 }
-$READABLE_TRACE_REVERSE = False
-$READABLE_TRACE_ALIGN = False
-$READABLE_TRACE_STRIP_PATH_ENV = False
-$READABLE_TRACE_ENVVAR_ONLY = False
-$READABLE_TRACE_ON_TTY = False
-$READABLE_TRACE_CONSERVATIVE = False
 
-# Safety counter to prevent infinite recursion
-$_TRACEBACK_DEPTH = 0
-$_MAX_TRACEBACK_DEPTH = 5
-
-def __flush(message):
-    """Using sys.stderr.buffer.write for xonsh."""
-    st = message + '\n'
+# Configurar pretty_traceback
+def configure_pretty_traceback():
     if $XONSH_READABLE_TRACEBACK:
-        rep = lambda s: '' if '__amalgam__.py' in s or 'readable-traceback.xsh' in s else s+'\n'
-        st = ''.join([rep(s) for s in message.split('\n')])
-    sys.stderr.buffer.write(st.encode(encoding="utf-8"))
-    sys.stderr.flush()
+        config = $PRETTY_TRACE_CONFIG
+        pretty_traceback.configure(
+            display_locals=config.get('display_locals', True),
+            display_trace=config.get('display_trace', True),
+            display_timestamp=config.get('display_timestamp', False),
+            display_scope=config.get('display_scope', True),
+            truncate_locals=config.get('truncate_locals', 100),
+            timeline=config.get('timeline', True),
+            theme=config.get('theme', 'monokai'),
+        )
+        # Activar pretty-traceback
+        pretty_traceback.install()
+    else:
+        # Desactivar pretty-traceback
+        pretty_traceback.uninstall()
 
-def _print_exception(msg=None, exc_info=None):
-    """Override xonsh.tools.print_exception with recursion protection."""
-    global $_TRACEBACK_DEPTH
+def print_exception(msg=None, exc_info=None):
+    """
+    Override xonsh.tools.print_exception.
+    """
+    # log_file
+    env = __xonsh__.env
+    if env is None:
+        manually_set_logfile = 'XONSH_TRACEBACK_LOGFILE' in env
+    else:
+        manually_set_logfile = env.is_manually_set('XONSH_TRACEBACK_LOGFILE')
 
-    # Prevent infinite recursion
-    $_TRACEBACK_DEPTH += 1
-    if $_TRACEBACK_DEPTH > $_MAX_TRACEBACK_DEPTH:
-        sys.stderr.write("Maximum traceback depth exceeded, aborting...\n")
-        $_TRACEBACK_DEPTH = 0
-        return
+    if not manually_set_logfile:
+        log_msg = 'xonsh: To log full traceback to a file set: $XONSH_TRACEBACK_LOGFILE = <filename>\n'
+        sys.stderr.buffer.write(log_msg.encode(encoding="utf-8"))
 
-    try:
-        # log_file handling
-        env = __xonsh__.env
-        if env is None:
-            manually_set_logfile = 'XONSH_TRACEBACK_LOGFILE' in os_environ
-        else:
-            manually_set_logfile = env.is_manually_set('XONSH_TRACEBACK_LOGFILE')
+    log_file = env.get('XONSH_TRACEBACK_LOGFILE', None)
+    log_file = to_logfile_opt(log_file)
+    if log_file:
+        with open(log_file, 'a') as f:
+            traceback.print_exc(file=f)
 
-        if not manually_set_logfile:
-            log_msg = 'xonsh: To log full traceback to a file set: $XONSH_TRACEBACK_LOGFILE = <filename>\n'
-            sys.stderr.buffer.write(log_msg.encode(encoding="utf-8"))
+    # Gestionar el traceback
+    tpe, v, tb = sys.exc_info() if exc_info is None else exc_info
+    if $XONSH_READABLE_TRACEBACK:
+        # Reconfigura pretty-traceback con la configuración actual
+        configure_pretty_traceback()
+        # pretty-traceback ya mostrará automáticamente la excepción
+        # ya que está instalado como hook de sys.excepthook
+    elif not $XONSH_SHOW_TRACEBACK:
+        pretty_traceback.uninstall()
+        display_error_message()
+    else:
+        pretty_traceback.uninstall()
+        traceback.print_exc()
 
-        log_file = env.get('XONSH_TRACEBACK_LOGFILE', None) if env else None
-        log_file = to_logfile_opt(log_file)
-        if log_file:
-            with open(log_file, 'a') as f:
-                traceback.print_exc(file=f)
+    if msg:
+        msg = msg if msg.endswith('\n') else msg + '\n'
+        sys.stderr.write(msg)
 
-        # pretty-traceback handling
-        tpe, v, tb = sys.exc_info() if exc_info is None else exc_info
+# Reemplazar la función de xonsh
+xonsh.tools.print_exception = print_exception
 
-        if $XONSH_READABLE_TRACEBACK:
-            pretty_traceback.configure(
-                display_link=True,
-                style=$READABLE_TRACE_STYLES,
-                reverse=$READABLE_TRACE_REVERSE,
-                strip_path=$READABLE_TRACE_STRIP_PATH_ENV,
-                suppress=[__file__]
-            )
-            pretty_traceback.hook()
-            traceback.print_exception(tpe, v, tb)
-        elif not $XONSH_SHOW_TRACEBACK:
-            pretty_traceback.unhook()
-            display_error_message()
-        else:
-            pretty_traceback.unhook()
-            traceback.print_exc()
-
-        if msg:
-            msg = msg if msg.endswith('\n') else msg + '\n'
-            sys.stderr.write(msg)
-
-    finally:
-        $_TRACEBACK_DEPTH -= 1
-
-# Replace the original print_exception
-xonsh.tools.print_exception = _print_exception
+# Configurar pretty-traceback al cargar el xontrib
+configure_pretty_traceback()
